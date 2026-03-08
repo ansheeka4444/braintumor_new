@@ -17,9 +17,11 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import load_img, img_to_array
 
-# Step 2: Extract Dataset (if zip file exists)
+
+# Step 2: Extract Dataset
 with zipfile.ZipFile("brain-mri-images-for-brain-tumor-detection.zip", 'r') as zip_ref:
     zip_ref.extractall("brain_tumor_data")
+
 
 # Step 3: Show Sample MRI Image
 folder = "brain_tumor_data/yes"
@@ -32,6 +34,7 @@ plt.title("Sample MRI Image (Tumor)")
 plt.axis('off')
 plt.show()
 
+
 # Step 4: Dataset Distribution Visualization
 yes_images = os.listdir("brain_tumor_data/yes")
 no_images = os.listdir("brain_tumor_data/no")
@@ -42,6 +45,7 @@ counts = [len(yes_images), len(no_images)]
 plt.bar(labels, counts)
 plt.title("Dataset Distribution")
 plt.show()
+
 
 # Step 5: Create Train/Validation Folders
 os.makedirs("dataset/train/yes", exist_ok=True)
@@ -63,6 +67,7 @@ for img in train_no:
 
 for img in val_no:
     shutil.copy(f"brain_tumor_data/no/{img}", "dataset/val/no/")
+
 
 # Step 6: Data Preprocessing + Augmentation
 train_gen = ImageDataGenerator(
@@ -89,6 +94,7 @@ val_data = val_gen.flow_from_directory(
     shuffle=False
 )
 
+
 # Step 7: CNN Model
 model = Sequential([
     Conv2D(32,(3,3),activation='relu',input_shape=(128,128,3)),
@@ -105,8 +111,10 @@ model = Sequential([
     Dense(1,activation='sigmoid')
 ])
 
+
 # Step 8: Model Summary
 model.summary()
+
 
 # Step 9: Compile Model
 model.compile(
@@ -115,12 +123,14 @@ model.compile(
     metrics=['accuracy']
 )
 
+
 # Step 10: Early Stopping
 early_stop = EarlyStopping(
     monitor='val_loss',
     patience=3,
     restore_best_weights=True
 )
+
 
 # Step 11: Train Model
 history = model.fit(
@@ -130,6 +140,7 @@ history = model.fit(
     callbacks=[early_stop]
 )
 
+
 # Step 12: Accuracy Graph
 plt.plot(history.history['accuracy'], label='Train Accuracy')
 plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
@@ -137,12 +148,14 @@ plt.title("Model Accuracy")
 plt.legend()
 plt.show()
 
+
 # Step 13: Loss Graph
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.title("Model Loss")
 plt.legend()
 plt.show()
+
 
 # Step 14: Training Results Table
 results = pd.DataFrame({
@@ -152,6 +165,7 @@ results = pd.DataFrame({
 })
 
 print(results)
+
 
 # Step 15: Confusion Matrix
 val_data.reset()
@@ -167,30 +181,56 @@ print(confusion_matrix(true_classes,predicted_classes))
 print("\nClassification Report")
 print(classification_report(true_classes,predicted_classes,target_names=["No Tumor","Tumor"]))
 
+
 # Step 16: Save Model
-model.save("brain_tumor_cnn_model.h5")
+model.save("brain_tumor_cnn_model.keras")
 print("Model saved successfully!")
 
-# Step 17: Prediction on New MRI Image
+
+# Step 17: Prediction on New MRI Image with Confidence
+
 def predict_image(img_path):
 
-    img = load_img(img_path,target_size=(128,128))
-    img_array = img_to_array(img)/255
-    img_array = np.expand_dims(img_array,axis=0)
+    img = load_img(img_path, target_size=(128,128))
+    img_array = img_to_array(img) / 255
+    img_array = np.expand_dims(img_array, axis=0)
 
     prediction = model.predict(img_array)
 
-    confidence = prediction[0][0]*100
+    probability = prediction[0][0]
 
-    if prediction > 0.5:
-        result = f"Tumor Detected ({confidence:.2f}%)"
+    if probability > 0.5:
+        confidence = probability * 100
+        result = f"Tumor Detected"
     else:
-        result = f"No Tumor Detected ({100-confidence:.2f}%)"
+        confidence = (1 - probability) * 100
+        result = f"No Tumor Detected"
 
     plt.imshow(img)
-    plt.title(result)
+    plt.title(f"{result}\nConfidence: {confidence:.2f}%")
     plt.axis('off')
     plt.show()
+
+    print("Prediction:", result)
+    print("Confidence:", f"{confidence:.2f}%")
+
+    # Step 18: Predict Random Image From Dataset
+
+test_folder = "brain_tumor_data"
+
+# choose random class folder
+class_name = random.choice(["yes","no"])
+
+# choose random image
+img_name = random.choice(os.listdir(os.path.join(test_folder,class_name)))
+
+img_path = os.path.join(test_folder,class_name,img_name)
+
+print("Testing Image:", img_path)
+
+# run prediction
+predict_image(img_path)
+
 
 # Example
 # predict_image("test.jpg")
