@@ -1,0 +1,70 @@
+# Step 1: Import Libraries
+import os
+import zipfile
+import shutil
+import matplotlib.pyplot as plt
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv2D, MaxPooling2D, Flatten, Dense, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+
+# Step 2: Set Kaggle API credentials
+os.environ['KAGGLE_USERNAME'] = 'your_username'  # Replace with your Kaggle username
+os.environ['KAGGLE_KEY'] = 'your_key'            # Replace with your Kaggle API key
+
+# Step 3: Download and unzip dataset from Kaggle
+!kaggle datasets download -d navoneel/brain-mri-images-for-brain-tumor-detection
+with zipfile.ZipFile("brain-mri-images-for-brain-tumor-detection.zip", 'r') as zip_ref:
+    zip_ref.extractall("brain_tumor_data")
+
+# Step 4: Organize dataset into train/val
+os.makedirs("dataset/train/yes", exist_ok=True)
+os.makedirs("dataset/train/no", exist_ok=True)
+os.makedirs("dataset/val/yes", exist_ok=True)
+os.makedirs("dataset/val/no", exist_ok=True)
+
+yes_images = os.listdir("brain_tumor_data/yes")
+no_images = os.listdir("brain_tumor_data/no")
+
+train_yes, val_yes = train_test_split(yes_images, test_size=0.2, random_state=42)
+train_no, val_no = train_test_split(no_images, test_size=0.2, random_state=42)
+
+for img in train_yes:
+    shutil.copy(f"brain_tumor_data/yes/{img}", "dataset/train/yes/")
+for img in val_yes:
+    shutil.copy(f"brain_tumor_data/yes/{img}", "dataset/val/yes/")
+for img in train_no:
+    shutil.copy(f"brain_tumor_data/no/{img}", "dataset/train/no/")
+for img in val_no:
+    shutil.copy(f"brain_tumor_data/no/{img}", "dataset/val/no/")
+
+# Step 5: Image Preprocessing
+train_gen = ImageDataGenerator(rescale=1./255)
+val_gen = ImageDataGenerator(rescale=1./255)
+
+train_data = train_gen.flow_from_directory("dataset/train", target_size=(128, 128), batch_size=32, class_mode='binary')
+val_data = val_gen.flow_from_directory("dataset/val", target_size=(128, 128), batch_size=32, class_mode='binary')
+
+# Step 6: CNN Model
+model = Sequential([
+    Conv2D(32, (3, 3), activation='relu', input_shape=(128, 128, 3)),
+    MaxPooling2D(2, 2),
+    Conv2D(64, (3, 3), activation='relu'),
+    MaxPooling2D(2, 2),
+    Flatten(),
+    Dense(128, activation='relu'),
+    Dropout(0.5),
+    Dense(1, activation='sigmoid')
+])
+
+# Step 7: Compile and Train
+model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
+history = model.fit(train_data, epochs=10, validation_data=val_data)
+
+# Step 8: Plot Accuracy
+plt.plot(history.history['accuracy'], label='Train Accuracy')
+plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+plt.title('Model Accuracy')
+plt.legend()
+plt.show()
