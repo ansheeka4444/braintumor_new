@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import tensorflow as tf
+import urllib.request
 
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report, confusion_matrix
@@ -17,37 +18,74 @@ from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.utils import load_img, img_to_array
 
+# ==========================================
+# Automated Kaggle Dataset Download
+# ==========================================
+# ==========================================
+# Kaggle Download (COLAB FIX)
+# ==========================================
+print("Setting Kaggle credentials...")
 
-# Step 2: Extract Dataset
+os.environ['KAGGLE_USERNAME'] = "----------------------------------------"
+os.environ['KAGGLE_KEY'] = "-----------------------------------------"
+
+!pip install -q kaggle
+
+print("\nDownloading Dataset 1...")
+!kaggle datasets download -d navoneel/brain-mri-images-for-brain-tumor-detection
+
+print("\nDownloading Dataset 2...")
+!kaggle datasets download -d masoudnickparvar/brain-tumor-mri-dataset
+
+print("Download complete!\n")
+
+# Step 2: Extract Datasets & Aggregate
+import glob
+
+print("Extracting datasets...")
 with zipfile.ZipFile("brain-mri-images-for-brain-tumor-detection.zip", 'r') as zip_ref:
-    zip_ref.extractall("brain_tumor_data")
+    zip_ref.extractall("brain_tumor_data_1")
 
+with zipfile.ZipFile("brain-tumor-mri-dataset.zip", 'r') as zip_ref:
+    zip_ref.extractall("brain_tumor_data_2")
+
+yes_images = []
+no_images = []
+
+# Dataset 1: yes/no structure
+yes_images.extend(glob.glob("brain_tumor_data_1/**/*yes*/*.*", recursive=True))
+no_images.extend(glob.glob("brain_tumor_data_1/**/*no*/*.*", recursive=True))
+
+# Dataset 2: glioma, meningioma, pituitary, notumor
+yes_images.extend(glob.glob("brain_tumor_data_2/**/*glioma*/*.*", recursive=True))
+yes_images.extend(glob.glob("brain_tumor_data_2/**/*meningioma*/*.*", recursive=True))
+yes_images.extend(glob.glob("brain_tumor_data_2/**/*pituitary*/*.*", recursive=True))
+no_images.extend(glob.glob("brain_tumor_data_2/**/*notumor*/*.*", recursive=True))
+
+print(f"Total 'Yes' (Tumor) Images: {len(yes_images)}")
+print(f"Total 'No' (Healthy) Images: {len(no_images)}")
 
 # Step 3: Show Sample MRI Image
-folder = "brain_tumor_data/yes"
-sample_img = random.choice(os.listdir(folder))
-img_path = os.path.join(folder, sample_img)
-
-image = plt.imread(img_path)
+sample_img = random.choice(yes_images)
+image = plt.imread(sample_img)
 plt.imshow(image)
 plt.title("Sample MRI Image (Tumor)")
 plt.axis('off')
 plt.show()
 
-
 # Step 4: Dataset Distribution Visualization
-yes_images = os.listdir("brain_tumor_data/yes")
-no_images = os.listdir("brain_tumor_data/no")
-
 labels = ['Tumor','No Tumor']
 counts = [len(yes_images), len(no_images)]
 
 plt.bar(labels, counts)
-plt.title("Dataset Distribution")
+plt.title("Dataset Distribution (Merged)")
 plt.show()
 
-
 # Step 5: Create Train/Validation Folders
+import shutil
+if os.path.exists("dataset"):
+    shutil.rmtree("dataset")
+
 os.makedirs("dataset/train/yes", exist_ok=True)
 os.makedirs("dataset/train/no", exist_ok=True)
 os.makedirs("dataset/val/yes", exist_ok=True)
@@ -56,18 +94,19 @@ os.makedirs("dataset/val/no", exist_ok=True)
 train_yes, val_yes = train_test_split(yes_images, test_size=0.2, random_state=42)
 train_no, val_no = train_test_split(no_images, test_size=0.2, random_state=42)
 
-for img in train_yes:
-    shutil.copy(f"brain_tumor_data/yes/{img}", "dataset/train/yes/")
+# different dataset may have same name so here we are renaming the files 
+def copy_files(file_list, destination_folder):
+    for i, file_path in enumerate(file_list):
+        if not os.path.isfile(file_path): continue
+        extension = os.path.splitext(file_path)[1]
+        new_name = f"image_{i}{extension}"
+        shutil.copy(file_path, os.path.join(destination_folder, new_name))
 
-for img in val_yes:
-    shutil.copy(f"brain_tumor_data/yes/{img}", "dataset/val/yes/")
-
-for img in train_no:
-    shutil.copy(f"brain_tumor_data/no/{img}", "dataset/train/no/")
-
-for img in val_no:
-    shutil.copy(f"brain_tumor_data/no/{img}", "dataset/val/no/")
-
+print("Copying files to train/val folders... this may take a moment.")
+copy_files(train_yes, "dataset/train/yes/")
+copy_files(val_yes, "dataset/val/yes/")
+copy_files(train_no, "dataset/train/no/")
+copy_files(val_no, "dataset/val/no/")
 
 # Step 6: Data Preprocessing + Augmentation
 train_gen = ImageDataGenerator(
@@ -94,7 +133,6 @@ val_data = val_gen.flow_from_directory(
     shuffle=False
 )
 
-
 # Step 7: CNN Model
 model = Sequential([
     Conv2D(32,(3,3),activation='relu',input_shape=(128,128,3)),
@@ -111,10 +149,8 @@ model = Sequential([
     Dense(1,activation='sigmoid')
 ])
 
-
 # Step 8: Model Summary
 model.summary()
-
 
 # Step 9: Compile Model
 model.compile(
@@ -123,14 +159,12 @@ model.compile(
     metrics=['accuracy']
 )
 
-
 # Step 10: Early Stopping
 early_stop = EarlyStopping(
     monitor='val_loss',
     patience=3,
     restore_best_weights=True
 )
-
 
 # Step 11: Train Model
 history = model.fit(
@@ -140,7 +174,6 @@ history = model.fit(
     callbacks=[early_stop]
 )
 
-
 # Step 12: Accuracy Graph
 plt.plot(history.history['accuracy'], label='Train Accuracy')
 plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
@@ -148,14 +181,12 @@ plt.title("Model Accuracy")
 plt.legend()
 plt.show()
 
-
 # Step 13: Loss Graph
 plt.plot(history.history['loss'], label='Train Loss')
 plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.title("Model Loss")
 plt.legend()
 plt.show()
-
 
 # Step 14: Training Results Table
 results = pd.DataFrame({
@@ -165,7 +196,6 @@ results = pd.DataFrame({
 })
 
 print(results)
-
 
 # Step 15: Confusion Matrix
 val_data.reset()
@@ -181,15 +211,63 @@ print(confusion_matrix(true_classes,predicted_classes))
 print("\nClassification Report")
 print(classification_report(true_classes,predicted_classes,target_names=["No Tumor","Tumor"]))
 
-
 # Step 16: Save Model
 model.save("brain_tumor_cnn_model.keras")
 print("Model saved successfully!")
 
-
 # Step 17: Prediction on New MRI Image with Confidence
 
-def predict_image(img_path):
+def visualize_layer_activations(model_instance, img_array):
+    print("\nGenerating layer-wise transformations...")
+    # Get outputs of all layers
+    layer_outputs = [layer.output for layer in model_instance.layers]
+    layer_names = [layer.name for layer in model_instance.layers]
+    
+    if not layer_outputs:
+        print("No layers found for visualization.")
+        return
+        
+    # Create an activation model
+    from tensorflow.keras.models import Model
+    activation_model = Model(inputs=model_instance.inputs, outputs=layer_outputs)
+    activations = activation_model.predict(img_array)
+    
+    for layer_name, layer_activation in zip(layer_names, activations):
+        # Only visualize 2D spatial layers (Conv2D, MaxPooling2D)
+        if len(layer_activation.shape) != 4:
+            continue
+            
+        n_features = layer_activation.shape[-1]
+        features_to_show = min(16, n_features) # Show up to 16 feature maps
+        
+        cols = 4
+        rows = int(np.ceil(features_to_show / cols))
+        
+        fig, axes = plt.subplots(rows, cols, figsize=(cols * 2.5, rows * 2.5))
+        fig.suptitle(f'Layer Transformation: {layer_name}', fontsize=16)
+        axes = (axes.flatten() if isinstance(axes, np.ndarray) else [axes])
+        
+        for i in range(features_to_show):
+            x = layer_activation[0, :, :, i]
+            # Post-process the feature to make it visually clear
+            x -= x.mean()
+            if x.std() > 0:
+                x /= x.std()
+            x *= 64
+            x += 128
+            x = np.clip(x, 0, 255).astype('uint8')
+            
+            axes[i].imshow(x, cmap='viridis')
+            axes[i].axis('off')
+            axes[i].set_title(f'Filter {i+1}', fontsize=10)
+            
+        for j in range(features_to_show, len(axes)):
+            axes[j].axis('off')
+            
+        plt.tight_layout()
+        plt.show()
+
+def predict_image(img_path, show_layers=False):
 
     img = load_img(img_path, target_size=(128,128))
     img_array = img_to_array(img) / 255
@@ -214,9 +292,31 @@ def predict_image(img_path):
     print("Prediction:", result)
     print("Confidence:", f"{confidence:.2f}%")
 
-    # Step 18: Predict Random Image From Dataset
+    if show_layers:
+        visualize_layer_activations(model, img_array)
 
-test_folder = "brain_tumor_data"
+def predict_image_from_url(url):
+    print(f"Downloading image from URL: {url}")
+    temp_img_path = "temp_downloaded_mri.jpg"
+    
+    try:
+        # We add a robust User-Agent header to avoid 403/429 errors from strict websites
+        req = urllib.request.Request(
+            url, 
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+        )
+        with urllib.request.urlopen(req) as response, open(temp_img_path, 'wb') as out_file:
+            shutil.copyfileobj(response, out_file)
+            
+        print("Download successful. Running prediction...")
+        predict_image(temp_img_path, show_layers=True)
+    except Exception as e:
+        print(f"\nFailed to process the URL. Error: {e}")
+        print("Tip: Make sure the URL points directly to an image format (e.g., ends with .jpg or .png).")
+
+    # Step 18: Predict Random Image From Validation Dataset
+
+test_folder = "dataset/val"
 
 # choose random class folder
 class_name = random.choice(["yes","no"])
@@ -231,6 +331,34 @@ print("Testing Image:", img_path)
 # run prediction
 predict_image(img_path)
 
-
 # Example
 # predict_image("test.jpg")
+
+print("\nDatasets Used:")
+print("1. Brain MRI Images for Brain Tumor Detection")
+print("URL: https://www.kaggle.com/datasets/navoneel/brain-mri-images-for-brain-tumor-detection")
+
+print("\n2. Brain Tumor MRI Dataset")
+print("URL: https://www.kaggle.com/datasets/masoudnickparvar/brain-tumor-mri-dataset")
+
+# ==========================================
+# REAL WORLD TESTING EXAMPLE:
+# User Selects an MRI image from their computer
+# ==========================================
+# ==========================================
+# REAL WORLD TESTING (COLAB VERSION)
+# ==========================================
+from google.colab import files
+
+print("\n--- Testing Custom Image ---")
+print("Upload MRI image using button")
+
+uploaded = files.upload()
+
+file_path = list(uploaded.keys())[0]
+
+print(f"Selected Image: {file_path}")
+print("Running prediction...")
+
+predict_image(file_path, show_layers=True)
+
